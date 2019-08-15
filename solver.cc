@@ -1,6 +1,7 @@
 #include <cmath>
 #include <iostream>
-#include <omp.h>
+#include <type_traits>
+//#include <omp.h>
 
 using Real = double;
 constexpr size_t _NUMSTEPS = 101;
@@ -25,6 +26,21 @@ private:
   T data[data_count];
 };
 
+template<typename T, size_t L, size_t W, size_t H, size_t depth>
+struct level{
+  grid<T, L, W, H> b;
+  grid<T, L, W, H> x;
+
+  static_assert(!(L % 2) && !(W % 2) && !(H % 2), "Parity issue!");
+  level<T, L / 2, W / 2, H / 2, depth - 1> down;
+};
+
+template<typename T, size_t L, size_t W, size_t H>
+struct level<T, L, W, H, 0> {
+  grid<T, L, W, H> b;
+  grid<T, L, W, H> x;
+};
+
 template<typename T, size_t L, size_t W, size_t H>
 void StepRed(const grid<T, L, W, H>& b, grid<T, L, W, H>& x, int steps){
   if(steps >= _NUMSTEPS){
@@ -35,7 +51,7 @@ void StepRed(const grid<T, L, W, H>& b, grid<T, L, W, H>& x, int steps){
       GetStatus(b, x);
     }
 
-    #pragma omp parallel for
+    // #pragma omp parallel for
     for(int i = 0; i < L; ++i){
       for(int j = 0; j < W; ++j){
         for(int k= (i+j) % 2; k < H; k += 2){
@@ -60,7 +76,7 @@ void StepBlack(const grid<T, L, W, H>& b, grid<T, L, W, H>& x, int steps){
       GetStatus(b, x);
     }
 
-    #pragma omp parallel for
+    // #pragma omp parallel for
     for(int i = 0; i < L; ++i){
       for(int j = 0; j < W; ++j){
         for(int k= (i+j+1) % 2; k < H; k += 2){
@@ -79,7 +95,7 @@ template<typename T, size_t L, size_t W, size_t H>
 void GetStatus(const grid<T, L, W, H>& b, const grid<T, L, W, H>& x){
   T record = 0;
   T dist = 0;
-  #pragma omp parallel for reduction(+: dist) reduction(max: record)
+  // #pragma omp parallel for reduction(+: dist) reduction(max: record)
   for(int i = 0; i < L; ++i){
     for(int j = 0; j < W; ++j){
       for(int k = 0; k < H; ++k){
@@ -98,12 +114,9 @@ void GetStatus(const grid<T, L, W, H>& b, const grid<T, L, W, H>& x){
 }
 
 int main(){
-  using grid_t = grid<Real, _N, _N, _N>;
-  grid_t b = {};
-  b.at(0,0,0) = 1;
-  b.at(0,0,1) = -1;
+  level<Real, _N, _N, _N, 0> data = {};
+  data.b.at(0,0,0) = 1;
+  data.b.at(0,0,1) = -1;
 
-  grid_t x = {};
-
-  StepRed(b, x, 0);
+  StepRed(data.b, data.x, 0);
 }
