@@ -1,12 +1,11 @@
 #include <cmath>
 #include <iostream>
 #include <type_traits>
-//#include <omp.h>
+#include <omp.h>
 
 using Real = double;
-constexpr size_t _NUMSTEPS = 201;
-constexpr int _PRINT_EVERY = 10;
-constexpr size_t _N = 8;
+constexpr size_t _NUMSTEPS = 501;
+constexpr size_t _N = 512;
 
 template<typename T, size_t L, size_t W, size_t H>
 class grid{
@@ -23,7 +22,7 @@ public:
   }
 
 private:
-  T data[data_count];
+  T data[data_count] = {};
 };
 
 template<typename T, size_t L, size_t W, size_t H>
@@ -50,8 +49,6 @@ struct level{
   void refine();
 
   static_assert(!(L % 2) && !(W % 2) && !(H % 2), "Parity issue!");
-
-// private:
   level<T, L / 2, W / 2, H / 2, depth - 1> down;
 };
 
@@ -60,19 +57,12 @@ struct level<T, L, W, H, 0> {
   grid<T, L, W, H> dat;
 };
 
-
-
 template<typename T, size_t L, size_t W, size_t H>
 void StepRed(const grid<T, L, W, H>& b, grid<T, L, W, H>& x, int steps){
   if(steps <= 0){
     return;
   } else{
-    if(!((steps - 1) % _PRINT_EVERY)){
-      std::cout << "Step: " << _NUMSTEPS - steps << " ";
-      GetStatus(b, x);
-    }
-
-    // #pragma omp parallel for
+    #pragma omp parallel for
     for(u_int i = 0; i < L; ++i){
       for(u_int j = 0; j < W; ++j){
         for(u_int k= (i+j) % 2; k < H; k += 2){
@@ -92,12 +82,7 @@ void StepBlack(const grid<T, L, W, H>& b, grid<T, L, W, H>& x, int steps){
   if(steps <= 0){
     return;
   } else{
-    if(!(steps % _PRINT_EVERY)){
-      std::cout << "Step: " << _NUMSTEPS - steps << " ";
-      GetStatus(b, x);
-    }
-
-    // #pragma omp parallel for
+    #pragma omp parallel for
     for(u_int i = 0; i < L; ++i){
       for(u_int j = 0; j < W; ++j){
         for(u_int k= (i+j+1) % 2; k < H; k += 2){
@@ -116,7 +101,7 @@ template<typename T, size_t L, size_t W, size_t H>
 void GetStatus(const grid<T, L, W, H>& b, const grid<T, L, W, H>& x){
   T record = 0;
   T dist = 0;
-  // #pragma omp parallel for reduction(+: dist) reduction(max: record)
+  #pragma omp parallel for reduction(+: dist) reduction(max: record)
   for(u_int i = 0; i < L; ++i){
     for(u_int j = 0; j < W; ++j){
       for(u_int k = 0; k < H; ++k){
@@ -136,7 +121,7 @@ void GetStatus(const grid<T, L, W, H>& b, const grid<T, L, W, H>& x){
 
 template<typename T, size_t L, size_t W, size_t H, size_t depth>
 void level<T, L, W, H, depth>::coarsen(){
-  // #pragma omp parallel for
+  #pragma omp parallel for
   for(u_int i = 0; i < L; i += 2){
     for(u_int j = 0; j < W; j += 2){
       for(u_int k = 0; k < H; k += 2){
@@ -157,7 +142,7 @@ void level<T, L, W, H, depth>::coarsen(){
 
 template<typename T, size_t L, size_t W, size_t H, size_t depth>
 void level<T, L, W, H, depth>::refine(){
-  // #pragma omp parallel for
+  #pragma omp parallel for
   for(u_int i = 0; i < L / 2; ++i){
     for(u_int j = 0; j < W / 2; ++j){
       for(u_int k = 0; k < H / 2; ++k){
@@ -177,21 +162,32 @@ void level<T, L, W, H, depth>::refine(){
   }
 }
 
-int main(){
-  using level_t = level<Real, _N, _N, _N, 1>;
+template<typename T, size_t L, size_t W, size_t H>
+void Solve(level<T, L, W, H, 0>& b, level<T, L, W, H, 0>& x, int steps){
+  StepRed(b.dat, x.dat, steps);
+  std::cout << "Level: 0 ";
+  GetStatus(b.dat, x.dat);
+}
 
-  level_t b = {};
-  b.dat.at(0,0,0) = 1;
-  b.dat.at(0,0,1) = -1;
-  std::cout << b.dat << std::endl;
+template<typename T, size_t L, size_t W, size_t H, size_t depth>
+void Solve(level<T, L, W, H, depth>& b, level<T, L, W, H, depth>& x, int steps){
   b.coarsen();
-  std::cout << b.down.dat << std::endl;
-  b.refine();
-  std::cout << b.dat << std::endl;
+  x.coarsen();
+  Solve(b.down, x.down, steps);
+  x.refine();
+  StepRed(b.dat, x.dat, steps);
+  std::cout << "Level: " << depth << " ";
+  GetStatus(b.dat, x.dat);
+}
 
-  level_t x = {};
+int main(){
+  using level_t = level<Real, _N, _N, _N, 5>;
 
-  StepRed(b.dat, x.dat, _NUMSTEPS);
+  level_t& b = *(new level_t);
+  b.dat.at(0,0,0) = 1;
+  b.dat.at(128,128,128) = -1;
 
-  std::cout << x.dat << std::endl;
+  level_t& x = *(new level_t);
+
+  Solve(b, x, _NUMSTEPS);
 }
