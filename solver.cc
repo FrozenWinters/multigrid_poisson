@@ -1,11 +1,16 @@
 #include <cmath>
 #include <iostream>
 #include <type_traits>
-#include <omp.h>
+// #include <omp.h>
+#include <utility>
 
 using Real = double;
-constexpr size_t _NUMSTEPS = 501;
-constexpr size_t _N = 512;
+constexpr size_t _NUMSTEPS = 10000;
+constexpr size_t _N = 64;
+constexpr size_t _LEVELS = 3;
+constexpr size_t _X = 3;
+constexpr size_t _Y = 3;
+constexpr size_t _Z = 3;
 
 template<typename T, size_t L, size_t W, size_t H>
 class grid{
@@ -43,6 +48,8 @@ std::ostream & operator<<(std::ostream &os, const grid<T, L, W, H> &gr){
 
 template<typename T, size_t L, size_t W, size_t H, size_t depth>
 struct level{
+  using self_t = level<T, L, W, H, depth>;
+
   grid<T, L, W, H> dat;
 
   void coarsen();
@@ -119,6 +126,33 @@ void GetStatus(const grid<T, L, W, H>& b, const grid<T, L, W, H>& x){
   std::cout << "L1: " << dist << " Linfty: " << record << std::endl;
 }
 
+template<typename T, size_t L, size_t W, size_t H>
+void GetRemainder(const grid<T, L, W, H>& b, const grid<T, L, W, H>& x, grid<T, L, W, H>& rem){
+  #pragma omp parallel for
+  for(u_int i = 0; i < L; ++i){
+    for(u_int j = 0; j < W; ++j){
+      for(u_int k = 0; k < H; ++k){
+        rem.at(i,j,k) = b.at(i,j,k) - 6 * x.at(i,j,k)
+          + x.at(i+1,j,k) + x.at(i-1,j,k)
+          + x.at(i,j+1,k) + x.at(i,j-1,k)
+          + x.at(i,j,k+1) + x.at(i,j,k-1);
+      }
+    }
+  }
+}
+
+template<typename T, size_t L, size_t W, size_t H>
+void Accumulate(grid<T, L, W, H>& x, const grid<T, L, W, H>& y){
+  #pragma omp parallel for
+  for(u_int i = 0; i < L; ++i){
+    for(u_int j = 0; j < W; ++j){
+      for(u_int k = 0; k < H; ++k){
+        x.at(i,j,k) += y.at(i,j,k);
+      }
+    }
+  }
+}
+
 template<typename T, size_t L, size_t W, size_t H, size_t depth>
 void level<T, L, W, H, depth>::coarsen(){
   #pragma omp parallel for
@@ -180,14 +214,42 @@ void Solve(level<T, L, W, H, depth>& b, level<T, L, W, H, depth>& x, int steps){
   GetStatus(b.dat, x.dat);
 }
 
+template<typename T, size_t L, size_t W, size_t H, size_t depth>
+void Slash(const level<T, L, W, H, depth>& b, level<T, L, W, H, depth>& x, int steps, int times){
+  using level_t = level<T, L, W, H, depth>;
+
+  level_t& b_scrap1 = *(new level_t);
+  level_t& b_scrap2 = *(new level_t);
+  Accumulate(b_scrap1.dat, b.dat);
+
+  for(int K = 0; K < times; ++K){
+    std::cout << "Slash: " << K << std::endl;
+    //I'm doing this allocation to zero the memmory. Lazy desu.
+    level_t& x_scrap = *(new level_t);
+    Solve(b_scrap1, x_scrap, steps);
+    Accumulate(x.dat, x_scrap.dat);
+    GetRemainder(b_scrap1.dat, x_scrap.dat, b_scrap2.dat);
+    delete &x_scrap;
+    std::swap(b_scrap1, b_scrap2);
+    std::cout << "Overall: ";
+    GetStatus(b.dat, x.dat);
+  }
+
+  delete &b_scrap1;
+  delete &b_scrap2;
+}
+
 int main(){
-  using level_t = level<Real, _N, _N, _N, 5>;
+  using level_t = level<Real, _N, _N, _N, _LEVELS>;
 
   level_t& b = *(new level_t);
   b.dat.at(0,0,0) = 1;
-  b.dat.at(128,128,128) = -1;
+  b.dat.at(_X, _Y, _Z) = -1;
 
   level_t& x = *(new level_t);
 
-  Solve(b, x, _NUMSTEPS);
+  Slash(b, x, _NUMSTEPS, 1);
+
+  delete &x;
+  delete &b;
 }
