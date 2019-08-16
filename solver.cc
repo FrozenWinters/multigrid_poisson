@@ -1,16 +1,17 @@
 #include <cmath>
 #include <iostream>
 #include <type_traits>
-// #include <omp.h>
+#include <omp.h>
 #include <utility>
 
 using Real = double;
-constexpr size_t _NUMSTEPS = 10000;
-constexpr size_t _N = 64;
-constexpr size_t _LEVELS = 3;
-constexpr size_t _X = 3;
-constexpr size_t _Y = 3;
-constexpr size_t _Z = 3;
+constexpr size_t _NUMSTEPS = 40;
+constexpr size_t _NUMSLASH = 10;
+constexpr size_t _N = 1024;
+constexpr size_t _LEVELS = 6;
+constexpr size_t _X = 0;
+constexpr size_t _Y = 0;
+constexpr size_t _Z = 1;
 
 template<typename T, size_t L, size_t W, size_t H>
 class grid{
@@ -26,8 +27,23 @@ public:
     return data[((i + L) % L) * W * H + ((j + W) % W) * H + ((k + H) % H)];
   }
 
+  void setZero(){
+    #pragma omp parallel for
+    for(u_int i = 0; i < L; ++i){
+      for(u_int j = 0; j < W; ++j){
+        for(u_int k = 0; k < H; ++k){
+          at(i,j,k) = 0;
+        }
+      }
+    }
+  }
+
+  grid(){
+    setZero();
+  }
+
 private:
-  T data[data_count] = {};
+  T data[data_count];
 };
 
 template<typename T, size_t L, size_t W, size_t H>
@@ -168,7 +184,7 @@ void level<T, L, W, H, depth>::coarsen(){
             }
           }
         }
-        down.dat.at(i / 2, j / 2, k / 2) /= 64;
+        down.dat.at(i / 2, j / 2, k / 2) /= 64 / 4;
       }
     }
   }
@@ -215,28 +231,23 @@ void Solve(level<T, L, W, H, depth>& b, level<T, L, W, H, depth>& x, int steps){
 }
 
 template<typename T, size_t L, size_t W, size_t H, size_t depth>
-void Slash(const level<T, L, W, H, depth>& b, level<T, L, W, H, depth>& x, int steps, int times){
+void Slash(const level<T, L, W, H, depth>& b, level<T, L, W, H, depth>& x,
+  level<T, L, W, H, depth>& b_scrap1, level<T, L, W, H, depth>& b_scrap2,
+  level<T, L, W, H, depth>& x_scrap, int steps, int times){
   using level_t = level<T, L, W, H, depth>;
 
-  level_t& b_scrap1 = *(new level_t);
-  level_t& b_scrap2 = *(new level_t);
-  Accumulate(b_scrap1.dat, b.dat);
+  GetRemainder(b.dat, x.dat, b_scrap1.dat);
 
   for(int K = 0; K < times; ++K){
     std::cout << "Slash: " << K << std::endl;
-    //I'm doing this allocation to zero the memmory. Lazy desu.
-    level_t& x_scrap = *(new level_t);
     Solve(b_scrap1, x_scrap, steps);
     Accumulate(x.dat, x_scrap.dat);
     GetRemainder(b_scrap1.dat, x_scrap.dat, b_scrap2.dat);
-    delete &x_scrap;
+    x_scrap.dat.setZero();
     std::swap(b_scrap1, b_scrap2);
     std::cout << "Overall: ";
     GetStatus(b.dat, x.dat);
   }
-
-  delete &b_scrap1;
-  delete &b_scrap2;
 }
 
 int main(){
@@ -247,9 +258,15 @@ int main(){
   b.dat.at(_X, _Y, _Z) = -1;
 
   level_t& x = *(new level_t);
+  level_t& x_scrap = *(new level_t);
+  level_t& b_scrap1 = *(new level_t);
+  level_t& b_scrap2 = *(new level_t);
 
-  Slash(b, x, _NUMSTEPS, 1);
-
+  Slash(b, x, x_scrap, b_scrap1, b_scrap2, _NUMSTEPS, _NUMSLASH);
+  //Solve(b, x, 200);
   delete &x;
   delete &b;
+  delete &x_scrap;
+  delete &b_scrap1;
+  delete &b_scrap2;
 }
