@@ -1,37 +1,38 @@
 #include <cmath>
 #include <iostream>
 #include <type_traits>
-// #include <omp.h>
+#include <omp.h>
 #include <utility>
 
 using Real = double;
 constexpr size_t _NUMSTEPS = 40;
 constexpr size_t _NUMSLASH = 10;
-constexpr size_t _N = 64;
-constexpr size_t _LEVELS = 4;
+constexpr size_t _N = 512;
+constexpr size_t _LEVELS = 6;
 constexpr size_t _X = 0;
 constexpr size_t _Y = 0;
 constexpr size_t _Z = 1;
+constexpr Real _THRESH = 1e-15;
 
-template<typename T, size_t LL, size_t WW, size_t HH>
+template<typename T, size_t D1, size_t D2, size_t D3>
 class grid{
-  using self_t = grid<T, LL, WW, HH>;
-  static constexpr size_t data_count = LL * WW * HH;
+  using self_t = grid<T, D1, D2, D3>;
+  static constexpr size_t data_count = D1 * D2 * D3;
 
 public:
   inline T& at(int i, int j, int k){
-    return data[((i + LL) % LL) * WW * HH + ((j + WW) % WW) * HH + ((k + HH) % HH)];
+    return data[((i + D1) % D1) * D2 * D3 + ((j + D2) % D2) * D3 + ((k + D3) % D3)];
   }
 
   inline const T& at(int i, int j, int k) const{
-    return data[((i + LL) % LL) * WW * HH + ((j + WW) % WW) * HH + ((k + HH) % HH)];
+    return data[((i + D1) % D1) * D2 * D3 + ((j + D2) % D2) * D3 + ((k + D3) % D3)];
   }
 
   void setZero(){
     #pragma omp parallel for
-    for(u_int i = 0; i < LL; ++i){
-      for(u_int j = 0; j < WW; ++j){
-        for(u_int k = 0; k < HH; ++k){
+    for(u_int i = 0; i < D1; ++i){
+      for(u_int j = 0; j < D2; ++j){
+        for(u_int k = 0; k < D3; ++k){
           at(i,j,k) = 0;
         }
       }
@@ -46,13 +47,13 @@ private:
   T data[data_count];
 };
 
-template<typename T, size_t LL, size_t WW, size_t HH>
-std::ostream & operator<<(std::ostream &os, const grid<T, LL, WW, HH> &gr){
-  for(u_int i = 0; i < LL; ++i){
+template<typename T, size_t D1, size_t D2, size_t D3>
+std::ostream & operator<<(std::ostream &os, const grid<T, D1, D2, D3> &gr){
+  for(u_int i = 0; i < D1; ++i){
     os << "{ ";
-    for(u_int j = 0; j < WW; ++j){
+    for(u_int j = 0; j < D2; ++j){
       os << std::endl << "    { ";
-      for(u_int k = 0; k < HH; ++k){
+      for(u_int k = 0; k < D3; ++k){
         os << gr.at(i, j, k) << " ";
       }
       os << "} ";
@@ -62,33 +63,33 @@ std::ostream & operator<<(std::ostream &os, const grid<T, LL, WW, HH> &gr){
   return os;
 }
 
-template<typename T, size_t LL, size_t WW, size_t HH, size_t depth>
+template<typename T, size_t D1, size_t D2, size_t D3, size_t depth>
 struct level{
-  using self_t = level<T, LL, WW, HH, depth>;
+  using self_t = level<T, D1, D2, D3, depth>;
 
-  grid<T, LL, WW, HH> dat;
+  grid<T, D1, D2, D3> dat;
 
   void coarsen();
   void refine();
 
-  static_assert(!(LL % 2) && !(WW % 2) && !(HH % 2), "Parity issue!");
-  level<T, LL / 2, WW / 2, HH / 2, depth - 1> down;
+  static_assert(!(D1 % 2) && !(D2 % 2) && !(D3 % 2), "Parity issue!");
+  level<T, D1 / 2, D2 / 2, D3 / 2, depth - 1> down;
 };
 
-template<typename T, size_t LL, size_t WW, size_t HH>
-struct level<T, LL, WW, HH, 0> {
-  grid<T, LL, WW, HH> dat;
+template<typename T, size_t D1, size_t D2, size_t D3>
+struct level<T, D1, D2, D3, 0> {
+  grid<T, D1, D2, D3> dat;
 };
 
-template<typename T, size_t LL, size_t WW, size_t HH>
-void StepRed(const grid<T, LL, WW, HH>& b, grid<T, LL, WW, HH>& x, int steps){
+template<typename T, size_t D1, size_t D2, size_t D3>
+void StepRed(const grid<T, D1, D2, D3>& b, grid<T, D1, D2, D3>& x, int steps){
   if(steps <= 0){
     return;
   } else{
     #pragma omp parallel for
-    for(u_int i = 0; i < LL; ++i){
-      for(u_int j = 0; j < WW; ++j){
-        for(u_int k= (i+j) % 2; k < HH; k += 2){
+    for(u_int i = 0; i < D1; ++i){
+      for(u_int j = 0; j < D2; ++j){
+        for(u_int k= (i+j) % 2; k < D3; k += 2){
             x.at(i,j,k) = (b.at(i,j,k)
               + x.at(i+1,j,k) + x.at(i-1,j,k)
               + x.at(i,j+1,k) + x.at(i,j-1,k)
@@ -100,15 +101,15 @@ void StepRed(const grid<T, LL, WW, HH>& b, grid<T, LL, WW, HH>& x, int steps){
   }
 }
 
-template<typename T, size_t LL, size_t WW, size_t HH>
-void StepBlack(const grid<T, LL, WW, HH>& b, grid<T, LL, WW, HH>& x, int steps){
+template<typename T, size_t D1, size_t D2, size_t D3>
+void StepBlack(const grid<T, D1, D2, D3>& b, grid<T, D1, D2, D3>& x, int steps){
   if(steps <= 0){
     return;
   } else{
     #pragma omp parallel for
-    for(u_int i = 0; i < LL; ++i){
-      for(u_int j = 0; j < WW; ++j){
-        for(u_int k= (i+j+1) % 2; k < HH; k += 2){
+    for(u_int i = 0; i < D1; ++i){
+      for(u_int j = 0; j < D2; ++j){
+        for(u_int k= (i+j+1) % 2; k < D3; k += 2){
             x.at(i,j,k) = (b.at(i,j,k)
               + x.at(i+1,j,k) + x.at(i-1,j,k)
               + x.at(i,j+1,k) + x.at(i,j-1,k)
@@ -120,14 +121,14 @@ void StepBlack(const grid<T, LL, WW, HH>& b, grid<T, LL, WW, HH>& x, int steps){
   }
 }
 
-template<typename T, size_t LL, size_t WW, size_t HH>
-auto GetStatus(const grid<T, LL, WW, HH>& b, const grid<T, LL, WW, HH>& x) -> T{
+template<typename T, size_t D1, size_t D2, size_t D3>
+auto GetStatus(const grid<T, D1, D2, D3>& b, const grid<T, D1, D2, D3>& x) -> T{
   T record = 0;
   T dist = 0;
   #pragma omp parallel for reduction(+: dist) reduction(max: record)
-  for(u_int i = 0; i < LL; ++i){
-    for(u_int j = 0; j < WW; ++j){
-      for(u_int k = 0; k < HH; ++k){
+  for(u_int i = 0; i < D1; ++i){
+    for(u_int j = 0; j < D2; ++j){
+      for(u_int k = 0; k < D3; ++k){
         T val = std::abs(6 * x.at(i,j,k)
           - x.at(i+1,j,k) - x.at(i-1,j,k)
           - x.at(i,j+1,k) - x.at(i,j-1,k)
@@ -143,12 +144,12 @@ auto GetStatus(const grid<T, LL, WW, HH>& b, const grid<T, LL, WW, HH>& x) -> T{
   return record;
 }
 
-template<typename T, size_t LL, size_t WW, size_t HH>
-void GetRemainder(const grid<T, LL, WW, HH>& b, const grid<T, LL, WW, HH>& x, grid<T, LL, WW, HH>& rem){
+template<typename T, size_t D1, size_t D2, size_t D3>
+void GetRemainder(const grid<T, D1, D2, D3>& b, const grid<T, D1, D2, D3>& x, grid<T, D1, D2, D3>& rem){
   #pragma omp parallel for
-  for(u_int i = 0; i < LL; ++i){
-    for(u_int j = 0; j < WW; ++j){
-      for(u_int k = 0; k < HH; ++k){
+  for(u_int i = 0; i < D1; ++i){
+    for(u_int j = 0; j < D2; ++j){
+      for(u_int k = 0; k < D3; ++k){
         rem.at(i,j,k) = b.at(i,j,k) - 6 * x.at(i,j,k)
           + x.at(i+1,j,k) + x.at(i-1,j,k)
           + x.at(i,j+1,k) + x.at(i,j-1,k)
@@ -158,24 +159,24 @@ void GetRemainder(const grid<T, LL, WW, HH>& b, const grid<T, LL, WW, HH>& x, gr
   }
 }
 
-template<typename T, size_t LL, size_t WW, size_t HH>
-void Accumulate(grid<T, LL, WW, HH>& x, const grid<T, LL, WW, HH>& y){
+template<typename T, size_t D1, size_t D2, size_t D3>
+void Accumulate(grid<T, D1, D2, D3>& x, const grid<T, D1, D2, D3>& y){
   #pragma omp parallel for
-  for(u_int i = 0; i < LL; ++i){
-    for(u_int j = 0; j < WW; ++j){
-      for(u_int k = 0; k < HH; ++k){
+  for(u_int i = 0; i < D1; ++i){
+    for(u_int j = 0; j < D2; ++j){
+      for(u_int k = 0; k < D3; ++k){
         x.at(i,j,k) += y.at(i,j,k);
       }
     }
   }
 }
 
-template<typename T, size_t LL, size_t WW, size_t HH, size_t depth>
-void level<T, LL, WW, HH, depth>::coarsen(){
+template<typename T, size_t D1, size_t D2, size_t D3, size_t depth>
+void level<T, D1, D2, D3, depth>::coarsen(){
   #pragma omp parallel for
-  for(u_int i = 0; i < LL; i += 2){
-    for(u_int j = 0; j < WW; j += 2){
-      for(u_int k = 0; k < HH; k += 2){
+  for(u_int i = 0; i < D1; i += 2){
+    for(u_int j = 0; j < D2; j += 2){
+      for(u_int k = 0; k < D3; k += 2){
         down.dat.at(i / 2, j / 2, k / 2) = 0;
         for(int dx = -1; dx < 2; ++dx){
           for(int dy = -1; dy < 2; ++dy){
@@ -191,12 +192,12 @@ void level<T, LL, WW, HH, depth>::coarsen(){
   }
 }
 
-template<typename T, size_t LL, size_t WW, size_t HH, size_t depth>
-void level<T, LL, WW, HH, depth>::refine(){
+template<typename T, size_t D1, size_t D2, size_t D3, size_t depth>
+void level<T, D1, D2, D3, depth>::refine(){
   #pragma omp parallel for
-  for(u_int i = 0; i < LL / 2; ++i){
-    for(u_int j = 0; j < WW / 2; ++j){
-      for(u_int k = 0; k < HH / 2; ++k){
+  for(u_int i = 0; i < D1 / 2; ++i){
+    for(u_int j = 0; j < D2 / 2; ++j){
+      for(u_int k = 0; k < D3 / 2; ++k){
         dat.at(2*i, 2*j, 2*k) = down.dat.at(i,j,k);
         dat.at(2*i+1, 2*j, 2*k) = (down.dat.at(i,j,k) + down.dat.at(i+1,j,k)) / 2;
         dat.at(2*i, 2*j+1, 2*k) = (down.dat.at(i,j,k) + down.dat.at(i,j+1,k)) / 2;
@@ -213,28 +214,28 @@ void level<T, LL, WW, HH, depth>::refine(){
   }
 }
 
-template<typename T, size_t LL, size_t WW, size_t HH>
-void Solve(level<T, LL, WW, HH, 0>& b, level<T, LL, WW, HH, 0>& x, int steps){
+template<typename T, size_t D1, size_t D2, size_t D3>
+void Solve(level<T, D1, D2, D3, 0>& b, level<T, D1, D2, D3, 0>& x, int steps){
   //NB: I'm setting x to zero at the bottom.
   x.dat.setZero();
   StepRed(b.dat, x.dat, steps);
-  // std::cout << "Level: 0 ";
-  // GetStatus(b.dat, x.dat);
+  std::cout << "Level: 0 ";
+  GetStatus(b.dat, x.dat);
 }
 
-template<typename T, size_t LL, size_t WW, size_t HH, size_t depth>
-void Solve(level<T, LL, WW, HH, depth>& b, level<T, LL, WW, HH, depth>& x, int steps){
+template<typename T, size_t D1, size_t D2, size_t D3, size_t depth>
+void Solve(level<T, D1, D2, D3, depth>& b, level<T, D1, D2, D3, depth>& x, int steps){
   b.coarsen();
   Solve(b.down, x.down, steps);
   x.refine();
   StepRed(b.dat, x.dat, steps);
-  // std::cout << "Level: " << depth << " ";
-  // GetStatus(b.dat, x.dat);
+  std::cout << "Level: " << depth << " ";
+  GetStatus(b.dat, x.dat);
 }
 
-template<typename T, size_t LL, size_t WW, size_t HH, size_t depth>
-void Slash(const level<T, LL, WW, HH, depth>& b, level<T, LL, WW, HH, depth>& x, int steps, int times){
-  using level_t = level<T, LL, WW, HH, depth>;
+template<typename T, size_t D1, size_t D2, size_t D3, size_t depth>
+void Slash(const level<T, D1, D2, D3, depth>& b, level<T, D1, D2, D3, depth>& x, int steps, int times, T thresh = 0){
+  using level_t = level<T, D1, D2, D3, depth>;
 
   level_t& x_scrap = *(new level_t);
   level_t& b_scrap1 = *(new level_t);
@@ -242,15 +243,19 @@ void Slash(const level<T, LL, WW, HH, depth>& b, level<T, LL, WW, HH, depth>& x,
 
   GetRemainder(b.dat, x.dat, b_scrap1.dat);
 
-  for(int K = 0; K < times; ++K){
+  int K = 0;
+  T error;
+
+  do{
     std::cout << "Slash: " << K << std::endl;
     Solve(b_scrap1, x_scrap, steps);
     Accumulate(x.dat, x_scrap.dat);
     GetRemainder(b_scrap1.dat, x_scrap.dat, b_scrap2.dat);
     std::swap(b_scrap1, b_scrap2);
     std::cout << "Overall: ";
-    GetStatus(b.dat, x.dat);
-  }
+    error = GetStatus(b.dat, x.dat);
+    ++K;
+  } while(K < times && error > thresh);
 
   delete &x_scrap;
   delete &b_scrap1;
@@ -261,14 +266,12 @@ int main(){
   using level_t = level<Real, _N, _N, _N, _LEVELS>;
 
   level_t& b = *(new level_t);
-  // level_t b;
-  // level_t* b = new level_t;
   b.dat.at(0,0,0) = 1;
   b.dat.at(_X, _Y, _Z) = -1;
 
   level_t& x = *(new level_t);
 
-  Slash(b, x, _NUMSTEPS, _NUMSLASH);
+  Slash(b, x, _NUMSTEPS, _NUMSLASH/*, _THRESH*/);
   delete &x;
   delete &b;
 }
