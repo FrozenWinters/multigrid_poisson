@@ -5,14 +5,14 @@
 #include <utility>
 
 using Real = double;
-constexpr size_t _NUMSTEPS = 40;
-constexpr size_t _NUMSLASH = 10;
+constexpr size_t _NUMSTEPS = 20;
+constexpr size_t _NUMSLASH = 20;
 constexpr size_t _N = 512;
-constexpr size_t _LEVELS = 6;
-constexpr size_t _X = 0;
-constexpr size_t _Y = 0;
-constexpr size_t _Z = 1;
-constexpr Real _THRESH = 1e-15;
+constexpr size_t _LEVELS = 7;
+constexpr size_t _X = 256;
+constexpr size_t _Y = 256;
+constexpr size_t _Z = 256;
+//constexpr Real _THRESH = 1e-15;
 
 template<typename T, size_t D1, size_t D2, size_t D3>
 class grid{
@@ -234,32 +234,29 @@ void Solve(level<T, D1, D2, D3, depth>& b, level<T, D1, D2, D3, depth>& x, int s
 }
 
 template<typename T, size_t D1, size_t D2, size_t D3, size_t depth>
-void Slash(const level<T, D1, D2, D3, depth>& b, level<T, D1, D2, D3, depth>& x, int steps, int times, T thresh = 0){
+void Slash(const level<T, D1, D2, D3, depth>& b, level<T, D1, D2, D3, depth>& x, int steps, int times, T thresh = 1e-15){
   using level_t = level<T, D1, D2, D3, depth>;
 
   level_t& x_scrap = *(new level_t);
-  level_t& b_scrap1 = *(new level_t);
-  level_t& b_scrap2 = *(new level_t);
+  level_t& b_scrap = *(new level_t);
 
-  GetRemainder(b.dat, x.dat, b_scrap1.dat);
+  GetRemainder(b.dat, x.dat, b_scrap.dat);
 
   int K = 0;
   T error;
 
   do{
     std::cout << "Slash: " << K << std::endl;
-    Solve(b_scrap1, x_scrap, steps);
+    Solve(b_scrap, x_scrap, steps);
     Accumulate(x.dat, x_scrap.dat);
-    GetRemainder(b_scrap1.dat, x_scrap.dat, b_scrap2.dat);
-    std::swap(b_scrap1, b_scrap2);
+    GetRemainder(b.dat, x.dat, b_scrap.dat);
     std::cout << "Overall: ";
     error = GetStatus(b.dat, x.dat);
     ++K;
   } while(K < times && error > thresh);
 
   delete &x_scrap;
-  delete &b_scrap1;
-  delete &b_scrap2;
+  delete &b_scrap;
 }
 
 int main(){
@@ -271,7 +268,7 @@ int main(){
 
   level_t& x = *(new level_t);
 
-  Slash(b, x, _NUMSTEPS, _NUMSLASH/*, _THRESH*/);
+  Slash(b, x, _NUMSTEPS, _NUMSLASH);
   delete &x;
   delete &b;
 }
